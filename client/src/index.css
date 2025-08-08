@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(210 25% 7.8431%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(210 25% 7.8431%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(210 25% 7.8431%);
+  --primary: hsl(207.69 90.23% 54.12%);
+  --primary-dark: hsl(207.14 87.80% 51.96%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(0 0% 26.27%);
+  --secondary-foreground: hsl(0 0% 100%);
+  --muted: hsl(0 0% 98.04%);
+  --muted-foreground: hsl(0 0% 45.49%);
+  --accent: hsl(122.4 39.4% 49.2%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(4.31 89.62% 58.43%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(0 0% 89.80%);
+  --input: hsl(0 0% 89.80%);
+  --ring: hsl(207.69 90.23% 54.12%);
+  --warning: hsl(35.52 91.13% 56.47%);
+  --warning-foreground: hsl(0 0% 100%);
+  --surface: hsl(0 0% 100%);
+  --background-page: hsl(0 0% 98.04%);
+  --chart-1: hsl(207.69 90.23% 54.12%);
+  --chart-2: hsl(122.4 39.4% 49.2%);
+  --chart-3: hsl(35.52 91.13% 56.47%);
+  --chart-4: hsl(4.31 89.62% 58.43%);
+  --chart-5: hsl(283.33 100% 50%);
+  --font-roboto: 'Roboto', sans-serif;
+  --radius: 0.5rem;
+  --shadow-material: 0 2px 4px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1);
+  --shadow-material-raised: 0 4px 8px rgba(0,0,0,0.12), 0 16px 32px rgba(0,0,0,0.12);
+}
+
+.dark {
+  --background: hsl(0 0% 3.9%);
+  --foreground: hsl(0 0% 98%);
+  --card: hsl(0 0% 3.9%);
+  --card-foreground: hsl(0 0% 98%);
+  --popover: hsl(0 0% 3.9%);
+  --popover-foreground: hsl(0 0% 98%);
+  --primary: hsl(207.69 90.23% 54.12%);
+  --primary-dark: hsl(207.14 87.80% 51.96%);
+  --primary-foreground: hsl(210 40% 98%);
+  --secondary: hsl(0 0% 14.9%);
+  --secondary-foreground: hsl(0 0% 98%);
+  --muted: hsl(0 0% 14.9%);
+  --muted-foreground: hsl(0 0% 63.9%);
+  --accent: hsl(122.4 39.4% 49.2%);
+  --accent-foreground: hsl(0 0% 98%);
+  --destructive: hsl(0 62.8% 30.6%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(0 0% 14.9%);
+  --input: hsl(0 0% 14.9%);
+  --ring: hsl(207.69 90.23% 54.12%);
+  --warning: hsl(35.52 91.13% 56.47%);
+  --warning-foreground: hsl(0 0% 98%);
+  --surface: hsl(0 0% 3.9%);
+  --background-page: hsl(0 0% 3.9%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background-page text-foreground font-roboto antialiased;
+  }
+}
+
+@layer utilities {
+  .shadow-material {
+    box-shadow: var(--shadow-material);
+  }
+  
+  .shadow-material-raised {
+    box-shadow: var(--shadow-material-raised);
+  }
+}
