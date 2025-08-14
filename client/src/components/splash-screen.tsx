@@ -45,7 +45,7 @@ export default function SplashScreen({ onComplete, duration = 3000 }: SplashScre
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.6 }}
-          className="fixed inset-0 z-50 bg-background flex items-center justify-center"
+          className="fixed inset-0 z-50 bg-background text-foreground flex items-center justify-center"
           data-testid="splash-screen"
         >
           {/* Background gradient */}

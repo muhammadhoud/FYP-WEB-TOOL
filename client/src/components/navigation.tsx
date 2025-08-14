@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { 
   GraduationCap, 
   Home, 
@@ -112,6 +113,8 @@ export default function Navigation({
             </Badge>
 
             <div className="flex items-center space-x-3">
+              <ThemeToggle />
+              
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user?.profileImageUrl || ""} alt={user?.firstName || "User"} />
                 <AvatarFallback>

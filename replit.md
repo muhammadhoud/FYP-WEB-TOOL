@@ -66,7 +66,8 @@ DeepSeek AI integration for intelligent grading capabilities:
 
 ### UI and Styling
 - **Radix UI**: Accessible component primitives for complex UI interactions
-- **Tailwind CSS**: Utility-first styling with custom design system
+- **Tailwind CSS**: Utility-first styling with custom design system and theme support
+- **Theme System**: Dark, light, and system-based theme switching with persistent storage
 - **Lucide Icons**: Consistent iconography throughout the application
 
 ### Development and Build Tools

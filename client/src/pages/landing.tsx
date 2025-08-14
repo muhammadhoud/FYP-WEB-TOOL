@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { GraduationCap, Brain, FileCheck, Users } from "lucide-react";
 
 export default function Landing() {
@@ -23,9 +24,12 @@ export default function Landing() {
               </div>
             </div>
             
-            <Button onClick={handleLogin} className="bg-primary hover:bg-primary-dark text-primary-foreground">
-              Sign in with Google
-            </Button>
+            <div className="flex items-center space-x-4">
+              <ThemeToggle />
+              <Button onClick={handleLogin} className="bg-primary hover:bg-primary-dark text-primary-foreground">
+                Sign in with Google
+              </Button>
+            </div>
           </div>
         </div>
       </header>
