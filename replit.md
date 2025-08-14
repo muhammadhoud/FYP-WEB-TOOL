@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 The client-side application is built with React and TypeScript, utilizing modern development patterns:
 - **Component Library**: Radix UI components with shadcn/ui styling for consistent, accessible interface elements
 - **Styling**: Tailwind CSS with CSS variables for theming and responsive design
+- **Animations**: Framer Motion for professional splash screen and micro-interactions
 - **State Management**: TanStack React Query for server state management and caching
 - **Routing**: Wouter for lightweight client-side routing
 - **Build Tool**: Vite for fast development and optimized production builds
