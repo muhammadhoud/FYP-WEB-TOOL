@@ -39,12 +39,20 @@ export async function setupAuth(app: Express) {
     return;
   }
 
+  // Construct the full callback URL
+  const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:5000`;
+  const callbackURL = `${baseUrl}/api/auth/google/callback`;
+  
+  console.log(`OAuth callback URL: ${callbackURL}`);
+  
   passport.use(
     new GoogleStrategy(
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: "/api/auth/google/callback",
+        callbackURL: callbackURL,
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
