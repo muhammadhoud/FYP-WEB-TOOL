@@ -83,23 +83,23 @@ export default function SplashScreen({ onComplete, duration = 3000 }: SplashScre
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
-              className="mb-8"
+              className="mb-8 flex justify-center"
             >
-              <div className="relative">
+              <div className="relative w-[120px] h-[120px]">
+                {/* Rotating gradient border */}
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
                   className="absolute inset-0 bg-gradient-to-r from-primary to-accent rounded-full p-1 blur-sm"
-                  style={{ width: 120, height: 120, margin: "auto" }}
                 />
+                {/* Logo circle */}
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
-                  className="relative bg-background rounded-full p-6 shadow-material-raised"
-                  style={{ width: 120, height: 120 }}
+                  className="absolute inset-0 bg-background rounded-full shadow-material-raised flex items-center justify-center"
                 >
-                  <GraduationCap className="w-12 h-12 text-primary mx-auto" />
+                  <GraduationCap className="w-12 h-12 text-primary" />
                 </motion.div>
               </div>
             </motion.div>
