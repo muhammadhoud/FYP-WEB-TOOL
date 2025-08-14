@@ -56,11 +56,18 @@ export async function setupAuth(app: Express) {
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
+          console.log('OAuth callback received:', {
+            profileId: profile.id,
+            email: profile.emails?.[0]?.value,
+            name: profile.displayName
+          });
+          
           const userEmail = profile.emails?.[0]?.value;
           
           // Optional: Restrict to specific email addresses
           const allowedEmails = process.env.ALLOWED_EMAILS?.split(',').map(e => e.trim());
           if (allowedEmails && allowedEmails.length > 0 && !allowedEmails.includes(userEmail || '')) {
+            console.log('Email not authorized:', userEmail);
             return done(new Error('Email not authorized'), undefined);
           }
 
@@ -72,6 +79,8 @@ export async function setupAuth(app: Express) {
             profileImageUrl: profile.photos?.[0]?.value || null,
           });
 
+          console.log('User created/updated:', user);
+
           // Store tokens for Google API access
           const userWithTokens = {
             ...user,
@@ -82,6 +91,7 @@ export async function setupAuth(app: Express) {
 
           done(null, userWithTokens);
         } catch (error) {
+          console.error('OAuth callback error:', error);
           done(error, undefined);
         }
       }
@@ -131,23 +141,37 @@ export async function setupAuth(app: Express) {
 
   // Auth routes - only set up if credentials are provided
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    app.get("/api/login", passport.authenticate("google", {
-      scope: [
-        "profile",
-        "email",
-        "https://www.googleapis.com/auth/classroom.courses.readonly",
-        "https://www.googleapis.com/auth/classroom.rosters.readonly",
-        "https://www.googleapis.com/auth/classroom.coursework.students.readonly",
-        "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
-        "https://www.googleapis.com/auth/drive.readonly",
-        "https://www.googleapis.com/auth/classroom.coursework.students",
-      ],
-    }));
+    app.get("/api/login", (req, res, next) => {
+      console.log('Login attempt initiated');
+      passport.authenticate("google", {
+        scope: [
+          "profile",
+          "email",
+          "https://www.googleapis.com/auth/classroom.courses.readonly",
+          "https://www.googleapis.com/auth/classroom.rosters.readonly",
+          "https://www.googleapis.com/auth/classroom.coursework.students.readonly",
+          "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
+          "https://www.googleapis.com/auth/drive.readonly",
+          "https://www.googleapis.com/auth/classroom.coursework.students",
+        ],
+      })(req, res, next);
+    });
 
     app.get("/api/auth/google/callback",
-      passport.authenticate("google", { failureRedirect: "/" }),
+      (req, res, next) => {
+        console.log('OAuth callback hit with query:', req.query);
+        if (req.query.error) {
+          console.log('OAuth error:', req.query.error);
+          return res.redirect("/?error=" + req.query.error);
+        }
+        next();
+      },
+      passport.authenticate("google", { 
+        failureRedirect: "/?error=auth_failed",
+      }),
       (req, res) => {
-        res.redirect("/");
+        console.log('OAuth success, user authenticated:', req.user ? 'YES' : 'NO');
+        res.redirect("/dashboard");
       }
     );
 
