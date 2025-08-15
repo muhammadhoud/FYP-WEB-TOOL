@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { X, FileText, Brain, Save, Upload } from "lucide-react";
+import { X, FileText, Brain, Save, Upload, Download } from "lucide-react";
 
 interface GradingModalProps {
   submission: any;
@@ -97,6 +97,65 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
     }
   }, [existingGradeData, isOpen]);
 
+  // Download submission function
+  const downloadSubmission = async (fileIndex?: number) => {
+    if (!submissionContent || !submissionContent.length) {
+      toast({
+        title: "No Content",
+        description: "No submission content available to download",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      if (fileIndex !== undefined && submissionContent[fileIndex]) {
+        // Download single file
+        const file = submissionContent[fileIndex];
+        const blob = new Blob([file.content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name || `submission_${submission.id}_file_${fileIndex + 1}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Downloaded",
+          description: `Downloaded ${file.name || 'file'}`,
+        });
+      } else {
+        // Download all files as ZIP (simplified - create text file with all content)
+        const allContent = submissionContent.map((file, index) => 
+          `=== File ${index + 1}: ${file.name || `file_${index + 1}`} ===\n${file.content}\n\n`
+        ).join('');
+        
+        const blob = new Blob([allContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `submission_${submission.id}_all_files.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Downloaded",
+          description: `Downloaded all ${submissionContent.length} files`,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Failed to download submission content",
+        variant: "destructive",
+      });
+    }
+  };
+
   // AI Grading mutation
   const aiGradingMutation = useMutation({
     mutationFn: async () => {
@@ -109,6 +168,14 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
       setFeedback(data.aiResult.feedback);
       setTotalScore(data.aiResult.totalScore);
       setCriteriaScores(data.aiResult.criteriaScores);
+      
+      // Invalidate queries to refresh submission lists instantly
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions", submission.id, "grade"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classrooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/analytics"] });
+      
       toast({
         title: "AI Grading Complete",
         description: "AI has successfully graded the submission",
@@ -188,7 +255,13 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
       return response.json();
     },
     onSuccess: () => {
+      // Invalidate all relevant queries for instant sync
       queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classrooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/submissions"] });
+      
       toast({
         title: "Success",
         description: "Grade posted to Google Classroom successfully",
@@ -302,10 +375,38 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
             {/* Submission Preview */}
             <div className="border-r border-border flex flex-col">
               <div className="px-6 py-3 bg-muted border-b border-border">
-                <h4 className="font-medium text-foreground flex items-center">
-                  <FileText className="mr-2 h-4 w-4" />
-                  Submission Preview
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-foreground flex items-center">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Submission Preview
+                  </h4>
+                  <div className="flex space-x-2">
+                    {submissionContent && submissionContent.length > 0 && (
+                      <>
+                        {submissionContent.length > 1 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => downloadSubmission()}
+                            className="text-xs"
+                          >
+                            <Download className="mr-1 h-3 w-3" />
+                            Download All
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => downloadSubmission(selectedFileIndex)}
+                          className="text-xs"
+                        >
+                          <Download className="mr-1 h-3 w-3" />
+                          Download File
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="flex-1 p-6 overflow-y-auto">
                 {contentLoading ? (

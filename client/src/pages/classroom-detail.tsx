@@ -23,7 +23,9 @@ import {
   AlertCircle,
   Eye,
   FileDown,
-  X
+  X,
+  Download,
+  Brain
 } from "lucide-react";
 
 interface ClassroomDetail {
@@ -88,6 +90,8 @@ export default function ClassroomDetail() {
   const [showCriteriaDialog, setShowCriteriaDialog] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<Array<{id: string, name: string}>>([]);
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [gradingAll, setGradingAll] = useState(false);
+  const [downloadingAll, setDownloadingAll] = useState(false);
   const queryClient = useQueryClient();
 
   // Redirect to home if not authenticated
@@ -162,6 +166,145 @@ export default function ClassroomDetail() {
     setSelectedSubmission(null);
     setIsGradingModalOpen(false);
     setIsPreviewModalOpen(false);
+  };
+
+  // Bulk grading function
+  const gradeAllSubmissions = async (assignmentId: string) => {
+    if (!hasGradingCriteria) {
+      toast({
+        title: "No Grading Criteria",
+        description: "Please set grading criteria for this assignment first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const ungradedSubmissions = submissions.filter(s => !s.isGraded);
+    if (ungradedSubmissions.length === 0) {
+      toast({
+        title: "All Graded",
+        description: "All submissions are already graded",
+      });
+      return;
+    }
+
+    setGradingAll(true);
+    try {
+      let gradedCount = 0;
+      for (const submission of ungradedSubmissions) {
+        try {
+          await fetch(`/api/submissions/${submission.id}/grade`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          gradedCount++;
+          toast({
+            title: "Progress",
+            description: `Graded ${gradedCount}/${ungradedSubmissions.length} submissions`,
+          });
+        } catch (error) {
+          console.error(`Failed to grade submission ${submission.id}:`, error);
+        }
+      }
+
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classrooms"] });
+
+      toast({
+        title: "Bulk Grading Complete",
+        description: `Successfully graded ${gradedCount} submissions`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to grade all submissions",
+        variant: "destructive",
+      });
+    } finally {
+      setGradingAll(false);
+    }
+  };
+
+  // Download all submissions function
+  const downloadAllSubmissions = async (assignmentId: string) => {
+    if (submissions.length === 0) {
+      toast({
+        title: "No Submissions",
+        description: "No submissions available to download",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDownloadingAll(true);
+    try {
+      let allContent = `Assignment: ${selectedAssignment?.title}\n`;
+      allContent += `Downloaded on: ${new Date().toLocaleString()}\n`;
+      allContent += `Total Submissions: ${submissions.length}\n\n`;
+      allContent += "=".repeat(80) + "\n\n";
+
+      for (let i = 0; i < submissions.length; i++) {
+        const submission = submissions[i];
+        allContent += `SUBMISSION ${i + 1}\n`;
+        allContent += `Student: ${submission.student.name}\n`;
+        allContent += `Submitted: ${submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : 'N/A'}\n`;
+        allContent += `Graded: ${submission.isGraded ? 'Yes' : 'No'}\n`;
+        if (submission.grade) {
+          allContent += `Score: ${submission.grade.totalScore}/${submission.grade.maxScore}\n`;
+        }
+        allContent += "\n";
+
+        // Try to fetch content for each submission
+        try {
+          const response = await fetch(`/api/submissions/${submission.id}/content`, {
+            credentials: 'include',
+          });
+          if (response.ok) {
+            const content = await response.json();
+            if (Array.isArray(content)) {
+              content.forEach((file, fileIndex) => {
+                allContent += `File ${fileIndex + 1}: ${file.name || `file_${fileIndex + 1}`}\n`;
+                allContent += "-".repeat(40) + "\n";
+                allContent += file.content + "\n\n";
+              });
+            } else if (content.content) {
+              allContent += "Content:\n";
+              allContent += "-".repeat(40) + "\n";
+              allContent += content.content + "\n\n";
+            }
+          }
+        } catch (error) {
+          allContent += "Error: Could not fetch submission content\n\n";
+        }
+
+        allContent += "=".repeat(80) + "\n\n";
+      }
+
+      // Create and download file
+      const blob = new Blob([allContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedAssignment?.title || 'assignment'}_all_submissions.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Downloaded",
+        description: `Downloaded all ${submissions.length} submissions`,
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Failed to download submissions",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingAll(false);
+    }
   };
 
   if (isLoading || !isAuthenticated) {
@@ -343,9 +486,37 @@ export default function ClassroomDetail() {
             {selectedAssignment && (
               <Card className="bg-surface shadow-material">
                 <div className="px-6 py-4 border-b border-border">
-                  <h3 className="text-lg font-medium text-foreground">
-                    Submissions for "{selectedAssignment.title}"
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-medium text-foreground">
+                        Submissions for "{selectedAssignment.title}"
+                      </h3>
+                      <Badge variant="outline" className="text-muted-foreground mt-1">
+                        {submissions.filter(s => s.isGraded).length} / {submissions.length} graded
+                      </Badge>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => downloadAllSubmissions(selectedAssignment.id)}
+                        disabled={!submissions.length || downloadingAll}
+                        className="text-xs"
+                      >
+                        <Download className="mr-1 h-3 w-3" />
+                        {downloadingAll ? 'Downloading...' : 'Download All'}
+                      </Button>
+                      <Button
+                        onClick={() => gradeAllSubmissions(selectedAssignment.id)}
+                        disabled={!hasGradingCriteria || gradingAll || submissions.every(s => s.isGraded)}
+                        size="sm"
+                        className="bg-primary hover:bg-primary-dark text-primary-foreground text-xs"
+                      >
+                        <Brain className="mr-1 h-3 w-3" />
+                        {gradingAll ? 'Grading All...' : 'Grade All Submissions'}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="p-6">
