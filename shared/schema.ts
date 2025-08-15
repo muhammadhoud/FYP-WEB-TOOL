@@ -75,6 +75,7 @@ export const submissions = pgTable("submissions", {
   fileName: text("file_name"),
   submittedAt: timestamp("submitted_at"),
   isGraded: boolean("is_graded").default(false),
+  status: varchar("status").default("ungraded"), // ungraded, pending, graded, error
   attachedFiles: jsonb("attached_files"), // Array of {id: string, name: string}
 });
 

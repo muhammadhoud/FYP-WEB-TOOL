@@ -526,6 +526,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Mark submissions as pending
+  app.post('/api/assignments/:id/submissions/mark-pending', isAuthenticated, async (req: any, res) => {
+    try {
+      const { submissionIds } = req.body;
+      
+      if (!submissionIds || !Array.isArray(submissionIds)) {
+        return res.status(400).json({ message: "Invalid submission IDs provided" });
+      }
+
+      // Update all submissions to pending status
+      for (const submissionId of submissionIds) {
+        await storage.updateSubmissionStatus(submissionId, 'pending');
+      }
+
+      res.json({ message: "Submissions marked as pending", count: submissionIds.length });
+    } catch (error) {
+      console.error("Error marking submissions as pending:", error);
+      res.status(500).json({ message: "Failed to mark submissions as pending" });
+    }
+  });
+
   // AI Grade submission
   app.post('/api/submissions/:submissionId/grade', isAuthenticated, async (req: any, res) => {
     try {
@@ -591,6 +612,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const grade = await storage.upsertGrade(gradeData);
+      
+      // Mark submission as graded
+      await storage.updateSubmissionStatus(submission.id, 'graded');
 
       res.json({ grade, aiResult: gradingResult });
     } catch (error) {

@@ -6,6 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import Navigation from "@/components/navigation";
 import GradingModal from "@/components/grading-modal";
+import ResultsAnalytics from "@/components/results-analytics";
+import OverallResultsModal from "@/components/overall-results-modal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,11 +61,13 @@ interface Submission {
   fileName?: string;
   submittedAt?: string;
   isGraded: boolean;
+  status?: 'ungraded' | 'pending' | 'graded' | 'error';
   student: Student;
   grade?: {
     totalScore: number;
     maxScore: number;
     feedback?: string;
+    criteriaScores?: Record<string, number>;
   };
   fileUrl?: string;
   attachedFiles?: Array<{id: string, name: string}>;
@@ -92,6 +96,8 @@ export default function ClassroomDetail() {
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [gradingAll, setGradingAll] = useState(false);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [activeTab, setActiveTab] = useState<'submissions' | 'results'>('submissions');
+  const [showOverallResults, setShowOverallResults] = useState(false);
   const queryClient = useQueryClient();
 
   // Redirect to home if not authenticated
@@ -168,7 +174,7 @@ export default function ClassroomDetail() {
     setIsPreviewModalOpen(false);
   };
 
-  // Bulk grading function
+  // Bulk grading function with instant status updates
   const gradeAllSubmissions = async (assignmentId: string) => {
     if (!hasGradingCriteria) {
       toast({
@@ -179,46 +185,88 @@ export default function ClassroomDetail() {
       return;
     }
 
-    const ungradedSubmissions = submissions.filter(s => !s.isGraded);
+    const ungradedSubmissions = submissions.filter(s => !s.isGraded && s.status !== 'pending');
     if (ungradedSubmissions.length === 0) {
       toast({
         title: "All Graded",
-        description: "All submissions are already graded",
+        description: "All submissions are already graded or in progress",
       });
       return;
     }
 
     setGradingAll(true);
+    
+    // Instantly mark all submissions as pending
+    try {
+      await fetch(`/api/assignments/${assignmentId}/submissions/mark-pending`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ submissionIds: ungradedSubmissions.map(s => s.id) }),
+      });
+      
+      // Refresh to show pending status immediately
+      queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
+      
+      toast({
+        title: "Grading Started",
+        description: `${ungradedSubmissions.length} submissions marked as pending. Grading in progress...`,
+      });
+    } catch (error) {
+      console.error('Failed to mark submissions as pending:', error);
+    }
+
     try {
       let gradedCount = 0;
+      let errorCount = 0;
+      
+      // Process submissions with better error handling
       for (const submission of ungradedSubmissions) {
         try {
-          await fetch(`/api/submissions/${submission.id}/grade`, {
+          const response = await fetch(`/api/submissions/${submission.id}/grade`, {
             method: 'POST',
             credentials: 'include',
           });
-          gradedCount++;
-          toast({
-            title: "Progress",
-            description: `Graded ${gradedCount}/${ungradedSubmissions.length} submissions`,
-          });
+          
+          if (response.ok) {
+            gradedCount++;
+          } else {
+            errorCount++;
+            console.error(`Failed to grade submission ${submission.id}:`, response.status);
+          }
+          
+          // Update progress every few submissions
+          if ((gradedCount + errorCount) % 3 === 0 || (gradedCount + errorCount) === ungradedSubmissions.length) {
+            toast({
+              title: "Progress Update",
+              description: `Processed ${gradedCount + errorCount}/${ungradedSubmissions.length} submissions`,
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
+          }
         } catch (error) {
+          errorCount++;
           console.error(`Failed to grade submission ${submission.id}:`, error);
         }
       }
 
-      // Refresh data
+      // Final refresh
       queryClient.invalidateQueries({ queryKey: ["/api/assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/classrooms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
 
       toast({
         title: "Bulk Grading Complete",
-        description: `Successfully graded ${gradedCount} submissions`,
+        description: `Successfully graded ${gradedCount} submissions${errorCount > 0 ? `, ${errorCount} failed` : ''}. View results in the Results tab.`,
       });
+      
+      // Switch to results tab
+      setActiveTab('results');
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to grade all submissions",
+        description: "Failed to complete bulk grading",
         variant: "destructive",
       });
     } finally {
@@ -506,11 +554,16 @@ export default function ClassroomDetail() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-lg font-medium text-foreground">
-                        Submissions for "{selectedAssignment.title}"
+                        "{selectedAssignment.title}"
                       </h3>
-                      <Badge variant="outline" className="text-muted-foreground mt-1">
-                        {submissions.filter(s => s.isGraded).length} / {submissions.length} graded
-                      </Badge>
+                      <div className="flex space-x-4 mt-1">
+                        <Badge variant="outline" className="text-muted-foreground">
+                          {submissions.filter(s => s.isGraded).length} / {submissions.length} graded
+                        </Badge>
+                        <Badge variant="secondary" className="text-muted-foreground">
+                          {submissions.filter(s => s.status === 'pending').length} pending
+                        </Badge>
+                      </div>
                     </div>
                     <div className="flex space-x-2">
                       <Button
@@ -521,11 +574,20 @@ export default function ClassroomDetail() {
                         className="text-xs"
                       >
                         <Download className="mr-1 h-3 w-3" />
-                        {downloadingAll ? 'Downloading...' : 'Download All Files'}
+                        {downloadingAll ? 'Downloading...' : 'Download All'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowOverallResults(true)}
+                        disabled={!submissions.some(s => s.isGraded)}
+                        className="text-xs"
+                      >
+                        Overall Results
                       </Button>
                       <Button
                         onClick={() => gradeAllSubmissions(selectedAssignment.id)}
-                        disabled={!hasGradingCriteria || gradingAll || submissions.every(s => s.isGraded)}
+                        disabled={!hasGradingCriteria || gradingAll || submissions.every(s => s.isGraded || s.status === 'pending')}
                         size="sm"
                         className="bg-primary hover:bg-primary-dark text-primary-foreground text-xs"
                       >
@@ -535,9 +597,21 @@ export default function ClassroomDetail() {
                     </div>
                   </div>
                 </div>
+                
+                {/* Tabs for Submissions and Results */}
+                <div className="px-6 py-2 border-b border-border">
+                  <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <TabsList>
+                      <TabsTrigger value="submissions">Submissions</TabsTrigger>
+                      <TabsTrigger value="results" disabled={!submissions.some(s => s.isGraded)}>Results</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
 
                 <div className="p-6">
-                  {!hasGradingCriteria && (
+                  {activeTab === 'submissions' && (
+                    <>
+                      {!hasGradingCriteria && (
                     <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 mb-6 rounded-md">
                       <p className="font-medium">
                         <AlertCircle className="inline-block w-4 h-4 mr-2" />
@@ -598,7 +672,12 @@ export default function ClassroomDetail() {
                               </div>
 
                               <div className="flex items-center space-x-3">
-                                {submission.isGraded ? (
+                                {submission.status === 'pending' ? (
+                                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                                    <Clock className="mr-1 h-3 w-3" />
+                                    Pending
+                                  </Badge>
+                                ) : submission.isGraded ? (
                                   <>
                                     <Badge className="bg-accent/10 text-accent">
                                       <CheckCircle className="mr-1 h-3 w-3" />
@@ -739,9 +818,35 @@ export default function ClassroomDetail() {
                       ))}
                     </div>
                   )}
+                    </>
+                  )}
+                  
+                  {/* Results Tab Content */}
+                  {activeTab === 'results' && (
+                    <ResultsAnalytics 
+                      submissions={submissions}
+                      assignmentTitle={selectedAssignment.title}
+                      maxPoints={selectedAssignment.maxPoints}
+                      onSaveResults={() => {
+                        toast({
+                          title: "Results Saved",
+                          description: "Assignment results have been saved successfully",
+                        });
+                      }}
+                    />
+                  )}
                 </div>
               </Card>
             )}
+
+            {/* Overall Results Modal */}
+            <OverallResultsModal
+              isOpen={showOverallResults}
+              onClose={() => setShowOverallResults(false)}
+              submissions={submissions}
+              assignmentTitle={selectedAssignment?.title || ''}
+              maxPoints={selectedAssignment?.maxPoints}
+            />
           </TabsContent>
 
           <TabsContent value="students" className="space-y-6">

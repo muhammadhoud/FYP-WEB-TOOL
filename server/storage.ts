@@ -48,6 +48,7 @@ export interface IStorage {
   getSubmissions(assignmentId: string): Promise<Submission[]>;
   getSubmission(id: string): Promise<Submission | undefined>;
   upsertSubmission(submission: InsertSubmission): Promise<Submission>;
+  updateSubmissionStatus(id: string, status: 'ungraded' | 'pending' | 'graded' | 'error'): Promise<void>;
   
   // Grading criteria operations
   getGradingCriteria(assignmentId: string): Promise<GradingCriteria[]>;
@@ -170,9 +171,21 @@ export class MemStorage implements IStorage {
     const submission: Submission = {
       ...existing,
       ...submissionData,
+      status: (submissionData as any).status || existing?.status || 'ungraded',
     };
     this.submissions.set(submission.id, submission);
     return submission;
+  }
+
+  async updateSubmissionStatus(id: string, status: 'ungraded' | 'pending' | 'graded' | 'error'): Promise<void> {
+    const submission = this.submissions.get(id);
+    if (submission) {
+      submission.status = status;
+      if (status === 'graded') {
+        submission.isGraded = true;
+      }
+      this.submissions.set(id, submission);
+    }
   }
 
   // Grading criteria operations
