@@ -106,10 +106,13 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
       });
       
       if (!response.ok) {
-        throw new Error('Failed to get files metadata');
+        const errorText = await response.text();
+        console.error('Failed to get files metadata:', response.status, errorText);
+        throw new Error(`Failed to get files metadata: ${response.status}`);
       }
       
       const files = await response.json();
+      console.log('Files received:', files);
       
       if (files.length === 0) {
         toast({
@@ -123,6 +126,8 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
       if (fileIndex !== undefined && files[fileIndex]) {
         // Download single file with original format
         const file = files[fileIndex];
+        console.log('Downloading single file:', file);
+        
         const downloadResponse = await fetch(file.downloadUrl, {
           credentials: 'include',
         });
@@ -133,6 +138,7 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
           const a = document.createElement('a');
           a.href = url;
           a.download = file.name;
+          a.style.display = 'none';
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -143,7 +149,9 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
             description: `Downloaded ${file.name} with original format`,
           });
         } else {
-          throw new Error('Failed to download file');
+          const errorText = await downloadResponse.text();
+          console.error('Download failed:', downloadResponse.status, errorText);
+          throw new Error(`Failed to download file: ${downloadResponse.status}`);
         }
       } else {
         // Download all files individually with original formats
@@ -152,16 +160,19 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
         
         for (const file of files) {
           try {
+            console.log('Downloading file:', file.name);
             const downloadResponse = await fetch(file.downloadUrl, {
               credentials: 'include',
             });
             
             if (downloadResponse.ok) {
               const blob = await downloadResponse.blob();
+              console.log('File blob size:', blob.size, 'type:', blob.type);
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
               a.download = file.name;
+              a.style.display = 'none';
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -169,8 +180,10 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
               downloadedCount++;
               
               // Small delay between downloads
-              await new Promise(resolve => setTimeout(resolve, 100));
+              await new Promise(resolve => setTimeout(resolve, 200));
             } else {
+              const errorText = await downloadResponse.text();
+              console.error(`Failed to download ${file.name}:`, downloadResponse.status, errorText);
               failedCount++;
             }
           } catch (error) {
@@ -193,9 +206,10 @@ export default function GradingModal({ submission, assignment, isOpen, onClose }
         }
       }
     } catch (error) {
+      console.error('Download error:', error);
       toast({
         title: "Download Failed",
-        description: "Failed to download submission files",
+        description: `Failed to download submission files: ${error.message}`,
         variant: "destructive",
       });
     }

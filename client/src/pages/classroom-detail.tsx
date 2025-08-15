@@ -245,10 +245,13 @@ export default function ClassroomDetail() {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to get files metadata');
+        const errorText = await response.text();
+        console.error('Failed to get files metadata:', response.status, errorText);
+        throw new Error(`Failed to get files metadata: ${response.status}`);
       }
       
       const allFiles = await response.json();
+      console.log('All files received for download:', allFiles);
       
       if (allFiles.length === 0) {
         toast({
@@ -265,16 +268,19 @@ export default function ClassroomDetail() {
       
       for (const file of allFiles) {
         try {
+          console.log('Downloading file:', file.downloadName || file.name);
           const downloadResponse = await fetch(file.downloadUrl, {
             credentials: 'include',
           });
           
           if (downloadResponse.ok) {
             const blob = await downloadResponse.blob();
+            console.log('Downloaded blob size:', blob.size, 'type:', blob.type);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = file.downloadName;
+            a.download = file.downloadName || file.name;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -282,8 +288,10 @@ export default function ClassroomDetail() {
             downloadedCount++;
             
             // Small delay between downloads to avoid overwhelming the browser
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 200));
           } else {
+            const errorText = await downloadResponse.text();
+            console.error(`Failed to download ${file.downloadName}:`, downloadResponse.status, errorText);
             failedCount++;
           }
         } catch (error) {
@@ -305,9 +313,10 @@ export default function ClassroomDetail() {
         });
       }
     } catch (error) {
+      console.error('Download all error:', error);
       toast({
         title: "Download Failed",
-        description: "Failed to download submissions",
+        description: `Failed to download submissions: ${error.message}`,
         variant: "destructive",
       });
     } finally {
@@ -614,9 +623,104 @@ export default function ClassroomDetail() {
                                   className="mr-2"
                                   onClick={() => openPreviewModal(submission)}
                                   disabled={!submission.attachedFiles?.length && !submission.fileUrl}
+                                  data-testid={`button-preview-${submission.id}`}
                                 >
                                   <Eye className="mr-1 h-3 w-3" />
                                   Preview {submission.attachedFiles?.length > 1 ? `(${submission.attachedFiles.length})` : ''}
+                                </Button>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mr-2"
+                                  onClick={async () => {
+                                    try {
+                                      // Get files for this specific submission
+                                      const response = await fetch(`/api/submissions/${submission.id}/files`, {
+                                        credentials: 'include',
+                                      });
+                                      
+                                      if (!response.ok) {
+                                        const errorText = await response.text();
+                                        console.error('Failed to get submission files:', response.status, errorText);
+                                        throw new Error(`Failed to get files: ${response.status}`);
+                                      }
+                                      
+                                      const files = await response.json();
+                                      console.log('Individual submission files:', files);
+                                      
+                                      if (files.length === 0) {
+                                        toast({
+                                          title: "No Files",
+                                          description: "No files available to download",
+                                          variant: "destructive",
+                                        });
+                                        return;
+                                      }
+                                      
+                                      // Download all files for this submission
+                                      let downloadedCount = 0;
+                                      let failedCount = 0;
+                                      
+                                      for (const file of files) {
+                                        try {
+                                          console.log('Downloading individual file:', file.name);
+                                          const downloadResponse = await fetch(file.downloadUrl, {
+                                            credentials: 'include',
+                                          });
+                                          
+                                          if (downloadResponse.ok) {
+                                            const blob = await downloadResponse.blob();
+                                            console.log('Individual file blob size:', blob.size, 'type:', blob.type);
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = file.name;
+                                            a.style.display = 'none';
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                            URL.revokeObjectURL(url);
+                                            downloadedCount++;
+                                            
+                                            await new Promise(resolve => setTimeout(resolve, 100));
+                                          } else {
+                                            const errorText = await downloadResponse.text();
+                                            console.error(`Failed to download ${file.name}:`, downloadResponse.status, errorText);
+                                            failedCount++;
+                                          }
+                                        } catch (error) {
+                                          console.error(`Failed to download ${file.name}:`, error);
+                                          failedCount++;
+                                        }
+                                      }
+                                      
+                                      if (downloadedCount > 0) {
+                                        toast({
+                                          title: "Downloaded",
+                                          description: `Downloaded ${downloadedCount} files for ${submission.student.name}${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
+                                        });
+                                      } else {
+                                        toast({
+                                          title: "Download Failed",
+                                          description: "Failed to download files",
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    } catch (error) {
+                                      console.error('Individual download error:', error);
+                                      toast({
+                                        title: "Download Failed",
+                                        description: `Failed to download submission files: ${error.message}`,
+                                        variant: "destructive",
+                                      });
+                                    }
+                                  }}
+                                  disabled={!submission.attachedFiles?.length && !submission.fileUrl}
+                                  data-testid={`button-download-${submission.id}`}
+                                >
+                                  <Download className="mr-1 h-3 w-3" />
+                                  Download {submission.attachedFiles?.length > 1 ? `(${submission.attachedFiles.length})` : ''}
                                 </Button>
 
                                 <Button
@@ -624,6 +728,7 @@ export default function ClassroomDetail() {
                                   size="sm"
                                   className="bg-primary hover:bg-primary-dark text-primary-foreground"
                                   disabled={!hasGradingCriteria}
+                                  data-testid={`button-grade-${submission.id}`}
                                 >
                                   {submission.isGraded ? 'Review Grade' : 'Grade'}
                                 </Button>
