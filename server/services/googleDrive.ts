@@ -3,6 +3,8 @@ import { google } from 'googleapis';
 export interface GoogleDriveService {
   getFileContent(accessToken: string, fileId: string): Promise<{ content: string; mimeType: string; name: string }>;
   getFileMetadata(accessToken: string, fileId: string): Promise<any>;
+  getFileDownloadUrl(accessToken: string, fileId: string): Promise<{ downloadUrl: string; name: string; mimeType: string }>;
+  downloadFileAsBlob(accessToken: string, fileId: string): Promise<{ blob: Buffer; name: string; mimeType: string }>;
 }
 
 class GoogleDriveServiceImpl implements GoogleDriveService {
@@ -56,6 +58,65 @@ class GoogleDriveServiceImpl implements GoogleDriveService {
     } catch (error) {
       console.error('Error fetching file metadata:', error);
       throw new Error('Failed to fetch file metadata from Google Drive');
+    }
+  }
+
+  async getFileDownloadUrl(accessToken: string, fileId: string): Promise<{ downloadUrl: string; name: string; mimeType: string }> {
+    try {
+      const auth = this.getAuth(accessToken);
+      const drive = google.drive({ version: 'v3', auth });
+      
+      // Get file metadata
+      const metadataResponse = await drive.files.get({
+        fileId,
+        fields: 'name,mimeType,size',
+      });
+
+      const { name, mimeType } = metadataResponse.data;
+      
+      // Create download URL
+      const downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      
+      return {
+        downloadUrl,
+        name: name || 'Unknown file',
+        mimeType: mimeType || 'application/octet-stream'
+      };
+    } catch (error) {
+      console.error('Error creating download URL:', error);
+      throw new Error('Failed to create download URL for file');
+    }
+  }
+
+  async downloadFileAsBlob(accessToken: string, fileId: string): Promise<{ blob: Buffer; name: string; mimeType: string }> {
+    try {
+      const auth = this.getAuth(accessToken);
+      const drive = google.drive({ version: 'v3', auth });
+      
+      // Get file metadata
+      const metadataResponse = await drive.files.get({
+        fileId,
+        fields: 'name,mimeType,size',
+      });
+
+      const { name, mimeType } = metadataResponse.data;
+
+      // Get file content as buffer
+      const contentResponse = await drive.files.get({
+        fileId,
+        alt: 'media',
+      }, {
+        responseType: 'arraybuffer'
+      });
+
+      return {
+        blob: Buffer.from(contentResponse.data as ArrayBuffer),
+        name: name || 'Unknown file',
+        mimeType: mimeType || 'application/octet-stream'
+      };
+    } catch (error) {
+      console.error('Error downloading file as blob:', error);
+      throw new Error('Failed to download file from Google Drive');
     }
   }
 }

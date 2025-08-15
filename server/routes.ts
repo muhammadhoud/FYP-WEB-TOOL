@@ -616,6 +616,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Download individual file with original format
+  app.get('/api/files/:fileId/download', isAuthenticated, async (req: any, res) => {
+    try {
+      const accessToken = req.user.accessToken;
+      const fileData = await googleDriveService.downloadFileAsBlob(accessToken, req.params.fileId);
+      
+      res.setHeader('Content-Disposition', `attachment; filename="${fileData.name}"`);
+      res.setHeader('Content-Type', fileData.mimeType);
+      res.send(fileData.blob);
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      res.status(500).json({ message: "Failed to download file" });
+    }
+  });
+
+  // Get submission files metadata for download
+  app.get('/api/submissions/:submissionId/files', isAuthenticated, async (req: any, res) => {
+    try {
+      const submission = await storage.getSubmission(req.params.submissionId);
+      if (!submission) {
+        return res.status(404).json({ message: "Submission not found" });
+      }
+
+      const accessToken = req.user.accessToken;
+      const files = [];
+
+      // Get all attached files
+      if (submission.attachedFiles && submission.attachedFiles.length > 0) {
+        for (const file of submission.attachedFiles) {
+          try {
+            const metadata = await googleDriveService.getFileMetadata(accessToken, file.id);
+            files.push({
+              id: file.id,
+              name: metadata.name || file.name,
+              mimeType: metadata.mimeType,
+              size: metadata.size,
+              downloadUrl: `/api/files/${file.id}/download`
+            });
+          } catch (error) {
+            console.error(`Error getting metadata for file ${file.id}:`, error);
+          }
+        }
+      } else if (submission.driveFileId) {
+        // Get primary file metadata
+        try {
+          const metadata = await googleDriveService.getFileMetadata(accessToken, submission.driveFileId);
+          files.push({
+            id: submission.driveFileId,
+            name: metadata.name || submission.fileName || 'submission',
+            mimeType: metadata.mimeType,
+            size: metadata.size,
+            downloadUrl: `/api/files/${submission.driveFileId}/download`
+          });
+        } catch (error) {
+          console.error(`Error getting metadata for primary file ${submission.driveFileId}:`, error);
+        }
+      }
+
+      res.json(files);
+    } catch (error) {
+      console.error("Error getting submission files:", error);
+      res.status(500).json({ message: "Failed to get submission files" });
+    }
+  });
+
+  // Get all submission files for assignment (for bulk download)
+  app.get('/api/assignments/:assignmentId/files', isAuthenticated, async (req: any, res) => {
+    try {
+      const assignment = await storage.getAssignment(req.params.assignmentId);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+
+      const submissions = await storage.getSubmissionsByAssignment(req.params.assignmentId);
+      const accessToken = req.user.accessToken;
+      const allFiles = [];
+
+      for (const submission of submissions) {
+        const student = await storage.getStudent(submission.studentId);
+        const studentName = student?.name || 'Unknown Student';
+
+        // Get all files for this submission
+        if (submission.attachedFiles && submission.attachedFiles.length > 0) {
+          for (const [index, file] of submission.attachedFiles.entries()) {
+            try {
+              const metadata = await googleDriveService.getFileMetadata(accessToken, file.id);
+              const originalName = metadata.name || file.name;
+              const extension = originalName.split('.').pop() || '';
+              const baseName = originalName.replace(/\.[^/.]+$/, '');
+              
+              allFiles.push({
+                id: file.id,
+                originalName: originalName,
+                downloadName: `${studentName}_${baseName}_${index + 1}.${extension}`,
+                mimeType: metadata.mimeType,
+                size: metadata.size,
+                downloadUrl: `/api/files/${file.id}/download`,
+                studentName: studentName,
+                submissionId: submission.id
+              });
+            } catch (error) {
+              console.error(`Error getting metadata for file ${file.id}:`, error);
+            }
+          }
+        } else if (submission.driveFileId) {
+          try {
+            const metadata = await googleDriveService.getFileMetadata(accessToken, submission.driveFileId);
+            const originalName = metadata.name || submission.fileName || 'submission';
+            const extension = originalName.split('.').pop() || '';
+            const baseName = originalName.replace(/\.[^/.]+$/, '');
+            
+            allFiles.push({
+              id: submission.driveFileId,
+              originalName: originalName,
+              downloadName: `${studentName}_${baseName}.${extension}`,
+              mimeType: metadata.mimeType,
+              size: metadata.size,
+              downloadUrl: `/api/files/${submission.driveFileId}/download`,
+              studentName: studentName,
+              submissionId: submission.id
+            });
+          } catch (error) {
+            console.error(`Error getting metadata for primary file ${submission.driveFileId}:`, error);
+          }
+        }
+      }
+
+      res.json(allFiles);
+    } catch (error) {
+      console.error("Error getting assignment files:", error);
+      res.status(500).json({ message: "Failed to get assignment files" });
+    }
+  });
+
   // Post grade to Google Classroom
   app.post('/api/grades/:gradeId/post', isAuthenticated, async (req: any, res) => {
     try {

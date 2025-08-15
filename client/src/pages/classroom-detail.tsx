@@ -239,63 +239,71 @@ export default function ClassroomDetail() {
 
     setDownloadingAll(true);
     try {
-      let allContent = `Assignment: ${selectedAssignment?.title}\n`;
-      allContent += `Downloaded on: ${new Date().toLocaleString()}\n`;
-      allContent += `Total Submissions: ${submissions.length}\n\n`;
-      allContent += "=".repeat(80) + "\n\n";
-
-      for (let i = 0; i < submissions.length; i++) {
-        const submission = submissions[i];
-        allContent += `SUBMISSION ${i + 1}\n`;
-        allContent += `Student: ${submission.student.name}\n`;
-        allContent += `Submitted: ${submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : 'N/A'}\n`;
-        allContent += `Graded: ${submission.isGraded ? 'Yes' : 'No'}\n`;
-        if (submission.grade) {
-          allContent += `Score: ${submission.grade.totalScore}/${submission.grade.maxScore}\n`;
-        }
-        allContent += "\n";
-
-        // Try to fetch content for each submission
-        try {
-          const response = await fetch(`/api/submissions/${submission.id}/content`, {
-            credentials: 'include',
-          });
-          if (response.ok) {
-            const content = await response.json();
-            if (Array.isArray(content)) {
-              content.forEach((file, fileIndex) => {
-                allContent += `File ${fileIndex + 1}: ${file.name || `file_${fileIndex + 1}`}\n`;
-                allContent += "-".repeat(40) + "\n";
-                allContent += file.content + "\n\n";
-              });
-            } else if (content.content) {
-              allContent += "Content:\n";
-              allContent += "-".repeat(40) + "\n";
-              allContent += content.content + "\n\n";
-            }
-          }
-        } catch (error) {
-          allContent += "Error: Could not fetch submission content\n\n";
-        }
-
-        allContent += "=".repeat(80) + "\n\n";
+      // Get all files metadata
+      const response = await fetch(`/api/assignments/${assignmentId}/files`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get files metadata');
+      }
+      
+      const allFiles = await response.json();
+      
+      if (allFiles.length === 0) {
+        toast({
+          title: "No Files",
+          description: "No files available to download",
+          variant: "destructive",
+        });
+        return;
       }
 
-      // Create and download file
-      const blob = new Blob([allContent], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${selectedAssignment?.title || 'assignment'}_all_submissions.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Download each file individually with proper names
+      let downloadedCount = 0;
+      let failedCount = 0;
+      
+      for (const file of allFiles) {
+        try {
+          const downloadResponse = await fetch(file.downloadUrl, {
+            credentials: 'include',
+          });
+          
+          if (downloadResponse.ok) {
+            const blob = await downloadResponse.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.downloadName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            downloadedCount++;
+            
+            // Small delay between downloads to avoid overwhelming the browser
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            failedCount++;
+          }
+        } catch (error) {
+          console.error(`Failed to download file ${file.downloadName}:`, error);
+          failedCount++;
+        }
+      }
 
-      toast({
-        title: "Downloaded",
-        description: `Downloaded all ${submissions.length} submissions`,
-      });
+      if (downloadedCount > 0) {
+        toast({
+          title: "Downloaded",
+          description: `Downloaded ${downloadedCount} files${failedCount > 0 ? `, ${failedCount} failed` : ''} with original formats`,
+        });
+      } else {
+        toast({
+          title: "Download Failed",
+          description: "Failed to download any files",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
         title: "Download Failed",
@@ -504,7 +512,7 @@ export default function ClassroomDetail() {
                         className="text-xs"
                       >
                         <Download className="mr-1 h-3 w-3" />
-                        {downloadingAll ? 'Downloading...' : 'Download All'}
+                        {downloadingAll ? 'Downloading...' : 'Download All Files'}
                       </Button>
                       <Button
                         onClick={() => gradeAllSubmissions(selectedAssignment.id)}
