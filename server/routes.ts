@@ -32,12 +32,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let totalStudents = 0;
       let pendingSubmissions = 0;
       let gradedToday = 0;
+      let totalAssignments = 0;
 
       for (const classroom of classrooms) {
         const students = await storage.getStudents(classroom.id);
         totalStudents += students.length;
 
         const assignments = await storage.getAssignments(classroom.id);
+        totalAssignments += assignments.length;
+        
         for (const assignment of assignments) {
           const submissions = await storage.getSubmissions(assignment.id);
           pendingSubmissions += submissions.filter(s => !s.isGraded).length;
@@ -52,12 +55,216 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         classrooms: classrooms.length,
         students: totalStudents,
+        assignments: totalAssignments,
         pendingSubmissions,
         gradedToday,
       });
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // Dashboard analytics
+  app.get('/api/dashboard/analytics', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const classrooms = await storage.getClassrooms(userId);
+
+      // Grading trends over the last 7 days
+      const gradingTrends = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        date.setHours(0, 0, 0, 0);
+        const nextDay = new Date(date);
+        nextDay.setDate(nextDay.getDate() + 1);
+
+        let gradedCount = 0;
+        for (const classroom of classrooms) {
+          const assignments = await storage.getAssignments(classroom.id);
+          for (const assignment of assignments) {
+            const grades = await storage.getGrades(assignment.id);
+            gradedCount += grades.filter(g => 
+              g.gradedAt && g.gradedAt >= date && g.gradedAt < nextDay
+            ).length;
+          }
+        }
+
+        gradingTrends.push({
+          date: date.toISOString().split('T')[0],
+          graded: gradedCount
+        });
+      }
+
+      // Grade distribution
+      const gradeDistribution = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+      let totalScores = [];
+
+      // Classroom performance comparison
+      const classroomStats = [];
+
+      for (const classroom of classrooms) {
+        const students = await storage.getStudents(classroom.id);
+        const assignments = await storage.getAssignments(classroom.id);
+        
+        let classroomTotalGrades = 0;
+        let classroomPendingSubmissions = 0;
+        let classroomTotalScore = 0;
+        let classroomGradedSubmissions = 0;
+
+        for (const assignment of assignments) {
+          const submissions = await storage.getSubmissions(assignment.id);
+          const grades = await storage.getGrades(assignment.id);
+          
+          classroomTotalGrades += grades.length;
+          classroomPendingSubmissions += submissions.filter(s => !s.isGraded).length;
+
+          for (const grade of grades) {
+            if (grade.totalScore && grade.maxScore) {
+              const percentage = (grade.totalScore / grade.maxScore) * 100;
+              totalScores.push(percentage);
+              classroomTotalScore += percentage;
+              classroomGradedSubmissions++;
+
+              // Grade distribution
+              if (percentage >= 90) gradeDistribution.A++;
+              else if (percentage >= 80) gradeDistribution.B++;
+              else if (percentage >= 70) gradeDistribution.C++;
+              else if (percentage >= 60) gradeDistribution.D++;
+              else gradeDistribution.F++;
+            }
+          }
+        }
+
+        classroomStats.push({
+          id: classroom.id,
+          name: classroom.name,
+          students: students.length,
+          assignments: assignments.length,
+          totalGrades: classroomTotalGrades,
+          pendingSubmissions: classroomPendingSubmissions,
+          averageScore: classroomGradedSubmissions > 0 ? Math.round(classroomTotalScore / classroomGradedSubmissions) : 0,
+          completionRate: assignments.length > 0 ? Math.round((classroomTotalGrades / (assignments.length * students.length)) * 100) : 0
+        });
+      }
+
+      // Assignment difficulty analysis
+      const assignmentAnalytics = [];
+      for (const classroom of classrooms) {
+        const assignments = await storage.getAssignments(classroom.id);
+        for (const assignment of assignments) {
+          const grades = await storage.getGrades(assignment.id);
+          const submissions = await storage.getSubmissions(assignment.id);
+          
+          if (grades.length > 0) {
+            const scores = grades
+              .filter(g => g.totalScore && g.maxScore)
+              .map(g => (g.totalScore! / g.maxScore!) * 100);
+            
+            const averageScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+            const submissionRate = submissions.length > 0 ? (grades.length / submissions.length) * 100 : 0;
+            
+            assignmentAnalytics.push({
+              id: assignment.id,
+              title: assignment.title,
+              classroomName: classroom.name,
+              averageScore: Math.round(averageScore),
+              submissionRate: Math.round(submissionRate),
+              totalSubmissions: submissions.length,
+              gradedSubmissions: grades.length,
+              maxPoints: assignment.maxPoints || 100
+            });
+          }
+        }
+      }
+
+      res.json({
+        gradingTrends,
+        gradeDistribution,
+        classroomStats,
+        assignmentAnalytics: assignmentAnalytics.slice(0, 10), // Top 10 assignments
+        totalGrades: totalScores.length,
+        averageScore: totalScores.length > 0 ? Math.round(totalScores.reduce((a, b) => a + b, 0) / totalScores.length) : 0
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard analytics:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard analytics" });
+    }
+  });
+
+  // Assignment analytics
+  app.get('/api/assignments/:id/analytics', isAuthenticated, async (req: any, res) => {
+    try {
+      const assignmentId = req.params.id;
+      const assignment = await storage.getAssignment(assignmentId);
+      
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found" });
+      }
+
+      const submissions = await storage.getSubmissions(assignmentId);
+      const grades = await storage.getGrades(assignmentId);
+      const gradingCriteria = await storage.getGradingCriteria(assignmentId);
+
+      // Score distribution
+      const scoreRanges = { '90-100': 0, '80-89': 0, '70-79': 0, '60-69': 0, '0-59': 0 };
+      const scores = grades
+        .filter(g => g.totalScore && g.maxScore)
+        .map(g => (g.totalScore! / g.maxScore!) * 100);
+
+      scores.forEach(score => {
+        if (score >= 90) scoreRanges['90-100']++;
+        else if (score >= 80) scoreRanges['80-89']++;
+        else if (score >= 70) scoreRanges['70-79']++;
+        else if (score >= 60) scoreRanges['60-69']++;
+        else scoreRanges['0-59']++;
+      });
+
+      // Criteria performance
+      const criteriaPerformance = gradingCriteria.map(criteria => {
+        const criteriaScores = grades
+          .filter(g => g.criteriaScores)
+          .map(g => {
+            const criteriaScore = (g.criteriaScores as any)?.[criteria.id];
+            return criteriaScore ? (criteriaScore / criteria.maxPoints) * 100 : 0;
+          })
+          .filter(score => score > 0);
+
+        return {
+          id: criteria.id,
+          name: criteria.name,
+          averageScore: criteriaScores.length > 0 ? 
+            Math.round(criteriaScores.reduce((a, b) => a + b, 0) / criteriaScores.length) : 0,
+          maxPoints: criteria.maxPoints,
+          weight: criteria.weight
+        };
+      });
+
+      res.json({
+        assignment: {
+          id: assignment.id,
+          title: assignment.title,
+          maxPoints: assignment.maxPoints,
+          dueDate: assignment.dueDate
+        },
+        statistics: {
+          totalSubmissions: submissions.length,
+          gradedSubmissions: grades.length,
+          pendingSubmissions: submissions.filter(s => !s.isGraded).length,
+          averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
+          highestScore: scores.length > 0 ? Math.round(Math.max(...scores)) : 0,
+          lowestScore: scores.length > 0 ? Math.round(Math.min(...scores)) : 0
+        },
+        scoreDistribution: Object.entries(scoreRanges).map(([range, count]) => ({
+          range,
+          count
+        })),
+        criteriaPerformance
+      });
+    } catch (error) {
+      console.error("Error fetching assignment analytics:", error);
+      res.status(500).json({ message: "Failed to fetch assignment analytics" });
     }
   });
 

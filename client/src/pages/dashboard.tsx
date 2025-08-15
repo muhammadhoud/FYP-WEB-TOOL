@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -6,10 +6,11 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import Navigation from "@/components/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Presentation, 
   Users, 
@@ -19,14 +20,64 @@ import {
   Search,
   FileText,
   Clock,
-  AlertCircle
+  AlertCircle,
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  Award,
+  Target
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart as RechartsPieChart,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Pie
+} from "recharts";
 
 interface DashboardStats {
   classrooms: number;
   students: number;
+  assignments: number;
   pendingSubmissions: number;
   gradedToday: number;
+}
+
+interface DashboardAnalytics {
+  gradingTrends: Array<{ date: string; graded: number }>;
+  gradeDistribution: { A: number; B: number; C: number; D: number; F: number };
+  classroomStats: Array<{
+    id: string;
+    name: string;
+    students: number;
+    assignments: number;
+    totalGrades: number;
+    pendingSubmissions: number;
+    averageScore: number;
+    completionRate: number;
+  }>;
+  assignmentAnalytics: Array<{
+    id: string;
+    title: string;
+    classroomName: string;
+    averageScore: number;
+    submissionRate: number;
+    totalSubmissions: number;
+    gradedSubmissions: number;
+    maxPoints: number;
+  }>;
+  totalGrades: number;
+  averageScore: number;
 }
 
 interface Classroom {
@@ -37,9 +88,12 @@ interface Classroom {
   studentCount: number;
 }
 
+const CHART_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'];
+
 export default function Dashboard() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -61,10 +115,22 @@ export default function Dashboard() {
     enabled: isAuthenticated,
   });
 
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<DashboardAnalytics>({
+    queryKey: ["/api/dashboard/analytics"],
+    enabled: isAuthenticated,
+  });
+
   const { data: classrooms = [], isLoading: classroomsLoading } = useQuery<Classroom[]>({
     queryKey: ["/api/classrooms"],
     enabled: isAuthenticated,
   });
+
+  // Filter classrooms based on search term
+  const filteredClassrooms = classrooms.filter(classroom =>
+    classroom.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (classroom.section && classroom.section.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (classroom.grade && classroom.grade.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const syncClassroomsMutation = useMutation({
     mutationFn: async () => {
@@ -73,6 +139,7 @@ export default function Dashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/classrooms"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/analytics"] });
       toast({
         title: "Success",
         description: "Classrooms synced successfully from Google Classroom",
@@ -138,8 +205,8 @@ export default function Dashboard() {
         </div>
 
         <div className="p-6 space-y-6 max-h-screen overflow-y-auto">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Enhanced Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <Card className="bg-surface shadow-material">
               <CardContent className="p-6">
                 <div className="flex items-center">
@@ -149,7 +216,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-muted-foreground">Active Classrooms</p>
+                    <p className="text-sm font-medium text-muted-foreground">Classrooms</p>
                     <p className="text-2xl font-semibold text-foreground">
                       {statsLoading ? '...' : stats?.classrooms || 0}
                     </p>
@@ -162,14 +229,32 @@ export default function Dashboard() {
               <CardContent className="p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <div className="bg-accent/10 p-3 rounded-lg">
-                      <Users className="text-accent h-6 w-6" />
+                    <div className="bg-blue-500/10 p-3 rounded-lg">
+                      <Users className="text-blue-500 h-6 w-6" />
                     </div>
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-muted-foreground">Total Students</p>
+                    <p className="text-sm font-medium text-muted-foreground">Students</p>
                     <p className="text-2xl font-semibold text-foreground">
                       {statsLoading ? '...' : stats?.students || 0}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-surface shadow-material">
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <div className="bg-green-500/10 p-3 rounded-lg">
+                      <FileText className="text-green-500 h-6 w-6" />
+                    </div>
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-muted-foreground">Assignments</p>
+                    <p className="text-2xl font-semibold text-foreground">
+                      {statsLoading ? '...' : stats?.assignments || 0}
                     </p>
                   </div>
                 </div>
@@ -180,12 +265,12 @@ export default function Dashboard() {
               <CardContent className="p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <div className="bg-warning/10 p-3 rounded-lg">
-                      <ClipboardList className="text-warning h-6 w-6" />
+                    <div className="bg-orange-500/10 p-3 rounded-lg">
+                      <Clock className="text-orange-500 h-6 w-6" />
                     </div>
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-muted-foreground">Pending Submissions</p>
+                    <p className="text-sm font-medium text-muted-foreground">Pending</p>
                     <p className="text-2xl font-semibold text-foreground">
                       {statsLoading ? '...' : stats?.pendingSubmissions || 0}
                     </p>
@@ -198,8 +283,8 @@ export default function Dashboard() {
               <CardContent className="p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <div className="bg-accent/10 p-3 rounded-lg">
-                      <CheckCircle className="text-accent h-6 w-6" />
+                    <div className="bg-emerald-500/10 p-3 rounded-lg">
+                      <CheckCircle className="text-emerald-500 h-6 w-6" />
                     </div>
                   </div>
                   <div className="ml-4">
@@ -213,132 +298,416 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Classrooms Section */}
-          <Card className="bg-surface shadow-material">
-            <div className="px-6 py-4 border-b border-border">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-foreground">Your Classrooms</h3>
-                <div className="flex space-x-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                    <Input 
-                      type="text" 
-                      placeholder="Search classrooms..." 
-                      className="pl-10 w-64"
-                    />
-                  </div>
-                </div>
+          {/* Analytics Tabs */}
+          <Tabs defaultValue="overview" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="overview" className="flex items-center space-x-2">
+                <BarChart3 className="h-4 w-4" />
+                <span>Overview</span>
+              </TabsTrigger>
+              <TabsTrigger value="trends" className="flex items-center space-x-2">
+                <TrendingUp className="h-4 w-4" />
+                <span>Trends</span>
+              </TabsTrigger>
+              <TabsTrigger value="performance" className="flex items-center space-x-2">
+                <Award className="h-4 w-4" />
+                <span>Performance</span>
+              </TabsTrigger>
+              <TabsTrigger value="classrooms" className="flex items-center space-x-2">
+                <Presentation className="h-4 w-4" />
+                <span>Classrooms</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Grade Distribution */}
+                <Card className="bg-surface shadow-material">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <PieChart className="h-5 w-5" />
+                      <span>Grade Distribution</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {analyticsLoading ? (
+                      <div className="h-80 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      </div>
+                    ) : analytics?.gradeDistribution ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <RechartsPieChart>
+                          <Pie
+                            data={Object.entries(analytics.gradeDistribution).map(([grade, count], index) => ({
+                              name: grade,
+                              value: count,
+                              fill: CHART_COLORS[index % CHART_COLORS.length]
+                            }))}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, value }) => `${name}: ${value}`}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                          >
+                            {Object.entries(analytics.gradeDistribution).map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </RechartsPieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-80 flex items-center justify-center text-muted-foreground">
+                        <p>No grade data available</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Assignment Performance */}
+                <Card className="bg-surface shadow-material">
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Target className="h-5 w-5" />
+                      <span>Assignment Performance</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {analyticsLoading ? (
+                      <div className="h-80 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      </div>
+                    ) : analytics?.assignmentAnalytics && analytics.assignmentAnalytics.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={analytics.assignmentAnalytics.slice(0, 5)}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="title" 
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={80}
+                          />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="averageScore" fill="#3b82f6" name="Average Score %" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-80 flex items-center justify-center text-muted-foreground">
+                        <p>No assignment data available</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-            </div>
-            
-            <div className="p-6">
-              {classroomsLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                  <p className="text-muted-foreground mt-2">Loading classrooms...</p>
-                </div>
-              ) : classrooms.length === 0 ? (
-                <div className="text-center py-8">
-                  <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-4">No classrooms found. Sync with Google Classroom to get started.</p>
-                  <Button 
-                    onClick={() => syncClassroomsMutation.mutate()}
-                    disabled={syncClassroomsMutation.isPending}
-                    className="bg-primary hover:bg-primary-dark text-primary-foreground"
-                  >
-                    <FolderSync className="mr-2 h-4 w-4" />
-                    Sync Classrooms
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {classrooms.map((classroom) => (
-                    <Card key={classroom.id} className="border border-border hover:shadow-material-raised transition-shadow cursor-pointer">
-                      <CardContent className="p-6">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h4 className="text-lg font-medium text-foreground mb-2">{classroom.name}</h4>
-                            <p className="text-sm text-muted-foreground mb-3">
-                              {classroom.grade && classroom.section ? `${classroom.grade} - ${classroom.section}` : classroom.section || classroom.grade || 'No section'}
-                            </p>
-                            <div className="flex items-center text-sm text-muted-foreground space-x-4">
-                              <span><Users className="inline mr-1 h-4 w-4" /> {classroom.studentCount || 0} students</span>
+
+              {/* Overall Statistics */}
+              <Card className="bg-surface shadow-material">
+                <CardHeader>
+                  <CardTitle>Overall Performance Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-primary">
+                        {analytics?.averageScore || 0}%
+                      </p>
+                      <p className="text-sm text-muted-foreground">Overall Average</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-green-500">
+                        {analytics?.totalGrades || 0}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Total Grades</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-blue-500">
+                        {analytics?.classroomStats.length || 0}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Active Classes</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-orange-500">
+                        {analytics?.assignmentAnalytics.length || 0}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Assignments</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="trends" className="space-y-6">
+              <Card className="bg-surface shadow-material">
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <TrendingUp className="h-5 w-5" />
+                    <span>Grading Activity (Last 7 Days)</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analyticsLoading ? (
+                    <div className="h-80 flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : analytics?.gradingTrends && analytics.gradingTrends.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={400}>
+                      <AreaChart data={analytics.gradingTrends}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}
+                        />
+                        <YAxis />
+                        <Tooltip 
+                          labelFormatter={(value) => new Date(value).toLocaleDateString('en-US', { 
+                            weekday: 'long',
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                          })}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="graded" 
+                          stroke="#3b82f6" 
+                          fill="#3b82f680" 
+                          name="Submissions Graded"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-80 flex items-center justify-center text-muted-foreground">
+                      <p>No grading activity data available</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="performance" className="space-y-6">
+              <Card className="bg-surface shadow-material">
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Award className="h-5 w-5" />
+                    <span>Assignment Performance Analysis</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analyticsLoading ? (
+                    <div className="h-80 flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : analytics?.assignmentAnalytics && analytics.assignmentAnalytics.length > 0 ? (
+                    <div className="space-y-4">
+                      {analytics.assignmentAnalytics.map((assignment) => (
+                        <div key={assignment.id} className="border border-border rounded-lg p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h4 className="font-medium text-foreground">{assignment.title}</h4>
+                              <p className="text-sm text-muted-foreground">{assignment.classroomName}</p>
+                            </div>
+                            <Badge variant={assignment.averageScore >= 80 ? "default" : "secondary"}>
+                              {assignment.averageScore}% avg
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">Submissions</p>
+                              <p className="font-medium">{assignment.totalSubmissions}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Graded</p>
+                              <p className="font-medium">{assignment.gradedSubmissions}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Completion</p>
+                              <p className="font-medium">{assignment.submissionRate}%</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Max Points</p>
+                              <p className="font-medium">{assignment.maxPoints}</p>
                             </div>
                           </div>
-                          <Badge variant="secondary" className="bg-warning/10 text-warning">
-                            View
-                          </Badge>
                         </div>
-                        <div className="mt-4 pt-4 border-t border-border">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-muted-foreground">Recent activity</span>
-                            <Link href={`/classroom/${classroom.id}`}>
-                              <Button 
-                                size="sm"
-                                className="bg-primary hover:bg-primary-dark text-primary-foreground"
-                              >
-                                View Details
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Card>
-
-          {/* Recent Activity & Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="bg-surface shadow-material">
-              <div className="px-6 py-4 border-b border-border">
-                <h3 className="text-lg font-medium text-foreground">Recent Activity</h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-accent/10 p-2 rounded-full">
-                      <CheckCircle className="text-accent h-4 w-4" />
+                      ))}
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-foreground">System ready for grading</p>
-                      <p className="text-xs text-muted-foreground">Start by syncing your classrooms</p>
+                  ) : (
+                    <div className="h-80 flex items-center justify-center text-muted-foreground">
+                      <p>No assignment performance data available</p>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-            <Card className="bg-surface shadow-material">
-              <div className="px-6 py-4 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium text-foreground">Quick Actions</h3>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="space-y-3">
-                  <Button 
-                    onClick={() => syncClassroomsMutation.mutate()}
-                    disabled={syncClassroomsMutation.isPending}
-                    className="w-full justify-start bg-primary hover:bg-primary-dark text-primary-foreground"
-                  >
-                    <FolderSync className="mr-2 h-4 w-4" />
-                    Sync Google Classroom
-                  </Button>
-                  <Button variant="outline" className="w-full justify-start" disabled>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Set Grading Criteria
-                  </Button>
-                  <Button variant="outline" className="w-full justify-start" disabled>
-                    <Clock className="mr-2 h-4 w-4" />
-                    Review Pending Grades
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
+            <TabsContent value="classrooms" className="space-y-6">
+              {/* Classroom Performance Comparison */}
+              <Card className="bg-surface shadow-material">
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Presentation className="h-5 w-5" />
+                    <span>Classroom Performance Comparison</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analyticsLoading ? (
+                    <div className="h-80 flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : analytics?.classroomStats && analytics.classroomStats.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={400}>
+                      <BarChart data={analytics.classroomStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="name" 
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="averageScore" fill="#3b82f6" name="Average Score %" />
+                        <Bar dataKey="completionRate" fill="#10b981" name="Completion Rate %" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-80 flex items-center justify-center text-muted-foreground">
+                      <p>No classroom performance data available</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Classroom Management */}
+              <Card className="bg-surface shadow-material">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Your Classrooms</span>
+                    <div className="flex space-x-2">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                        <Input 
+                          type="text" 
+                          placeholder="Search classrooms..." 
+                          className="pl-10 w-64"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {classroomsLoading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="text-muted-foreground mt-2">Loading classrooms...</p>
+                    </div>
+                  ) : filteredClassrooms.length === 0 && searchTerm ? (
+                    <div className="text-center py-8">
+                      <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-4">No classrooms found matching "{searchTerm}"</p>
+                      <Button 
+                        onClick={() => setSearchTerm("")}
+                        variant="outline"
+                      >
+                        Clear search
+                      </Button>
+                    </div>
+                  ) : classrooms.length === 0 ? (
+                    <div className="text-center py-8">
+                      <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-4">No classrooms found. Sync with Google Classroom to get started.</p>
+                      <Button 
+                        onClick={() => syncClassroomsMutation.mutate()}
+                        disabled={syncClassroomsMutation.isPending}
+                        className="bg-primary hover:bg-primary-dark text-primary-foreground"
+                      >
+                        <FolderSync className="mr-2 h-4 w-4" />
+                        Sync Classrooms
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredClassrooms.map((classroom) => {
+                        const classroomStats = analytics?.classroomStats.find(stat => stat.id === classroom.id);
+                        return (
+                          <Card key={classroom.id} className="border border-border hover:shadow-material-raised transition-shadow cursor-pointer">
+                            <CardContent className="p-6">
+                              <Link href={`/classroom/${classroom.id}`}>
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <h4 className="text-lg font-medium text-foreground mb-2">{classroom.name}</h4>
+                                    <p className="text-sm text-muted-foreground mb-3">
+                                      {classroom.grade && classroom.section ? `${classroom.grade} - ${classroom.section}` : classroom.section || classroom.grade || 'No section'}
+                                    </p>
+                                    
+                                    {/* Classroom Statistics */}
+                                    <div className="space-y-3">
+                                      <div className="flex items-center text-sm text-muted-foreground space-x-4">
+                                        <span className="flex items-center">
+                                          <Users className="inline mr-1 h-4 w-4" /> 
+                                          {classroom.studentCount || 0} students
+                                        </span>
+                                        <span className="flex items-center">
+                                          <FileText className="inline mr-1 h-4 w-4" /> 
+                                          {classroomStats?.assignments || 0} assignments
+                                        </span>
+                                      </div>
+                                      
+                                      {classroomStats && (
+                                        <div className="space-y-2">
+                                          <div className="flex justify-between text-sm">
+                                            <span className="text-muted-foreground">Average Score</span>
+                                            <Badge variant={classroomStats.averageScore >= 80 ? "default" : "secondary"}>
+                                              {classroomStats.averageScore}%
+                                            </Badge>
+                                          </div>
+                                          
+                                          <div className="flex justify-between text-sm">
+                                            <span className="text-muted-foreground">Completion Rate</span>
+                                            <span className="font-medium">{classroomStats.completionRate}%</span>
+                                          </div>
+                                          
+                                          {classroomStats.pendingSubmissions > 0 && (
+                                            <div className="flex justify-between text-sm">
+                                              <span className="text-muted-foreground">Pending</span>
+                                              <Badge variant="outline" className="text-orange-500">
+                                                {classroomStats.pendingSubmissions}
+                                              </Badge>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="ml-4">
+                                    <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20">
+                                      View
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </Link>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
     </div>
