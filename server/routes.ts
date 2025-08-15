@@ -689,7 +689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Assignment not found" });
       }
 
-      const submissions = await storage.getSubmissionsByAssignment(req.params.assignmentId);
+      const submissions = await storage.getSubmissions(req.params.assignmentId);
       const accessToken = req.user.accessToken;
       const allFiles = [];
 
